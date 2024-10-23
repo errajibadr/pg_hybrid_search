@@ -66,7 +66,7 @@ class PGHybridStoreSettings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
 
 
-def get_settings(vector_store_settings: Optional[VectorStoreSettings] = None):
+def get_settings(vector_store_settings: Optional[VectorStoreSettings] = None) -> PGHybridStoreSettings:
     if vector_store_settings is None:
         vector_store_settings = VectorStoreSettings()
     return PGHybridStoreSettings(vector_store=vector_store_settings)

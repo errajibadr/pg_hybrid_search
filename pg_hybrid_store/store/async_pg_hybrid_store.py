@@ -1,6 +1,9 @@
-from typing import List
+import time
+from typing import Any, List, Tuple
+import uuid
 import asyncpg
 from openai import AsyncOpenAI
+import pandas as pd
 from pg_hybrid_store.config import PGHybridStoreSettings, get_settings
 from pg_hybrid_store.search_types import SearchOptions, SearchResult
 from pg_hybrid_store.store.base import BaseHybridStore
@@ -120,13 +123,84 @@ class AsyncPGHybridStore(BaseHybridStore):
             logger.error(f"Error while dropping BM25 index: {str(e)}")
             raise e
 
+    async def _refresh_index(self):
+        """Refresh the BM25 index in the database"""
+        refresh_index_sql = f"VACUUM '{self.vector_store_table}';"
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(refresh_index_sql)
+        except Exception as e:
+            logger.error(f"Error while refreshing BM25 index: {str(e)}")
+            raise e
+
     async def close(self):
         """Close the connection pool"""
         if self.pool:
             await self.pool.close()
 
     async def get_embedding(self, text: str) -> List[float]:
-        pass
+        """
+        Generate embedding for the given text.
+
+        Args:
+            text: The input text to generate an embedding for.
+
+        Returns:
+            A list of floats representing the embedding.
+        """
+        text = text.replace("\n", " ")
+        start_time = time.time()
+        embedding = (
+            (
+                await self.embedding_client.embeddings.create(
+                    input=[text],
+                    model=self.settings.vector_store.embedding_model,
+                )
+            )
+            .data[0]
+            .embedding
+        )
+        elapsed_time = time.time() - start_time
+        logger.info(f"Embedding generated in {elapsed_time:.3f} seconds")
+        return embedding
+
+    async def get_embeddings(self, texts: List[str]) -> List[Tuple[str, List[float]]]:
+        """
+        Generate embeddings for the given texts.
+
+        Args:
+            texts: The input texts to generate embeddings for.
+
+        Returns:
+            A list of floats representing the embedding.
+        """
+        start_time = time.time()
+        embeddings = (
+            await self.embedding_client.embeddings.create(
+                input=texts,
+                model=self.settings.vector_store.embedding_model,
+            )
+        ).data
+        elapsed_time = time.time() - start_time
+        logging.info(f"Embeddings generated in {elapsed_time:.3f} seconds")
+        return [(embedding.index, embedding.embedding) for embedding in embeddings]
+
+    async def embed_documents(self, documents: List[Document]) -> List[dict[str, Any]]:
+        """Embed a list of documents"""
+        embeddings = await self.get_embeddings([doc.page_content for doc in documents])
+
+        documents_formatted = [
+            {
+                "id": str(uuid.uuid1()),
+                "metadata": documents[ix].metadata,
+                "contents": documents[ix].page_content,
+                "embedding": embedding,
+            }
+            for ix, embedding in embeddings
+        ]
+
+        return documents_formatted
 
     async def hybrid_search(self, query: str, k: int = 10, search_options: SearchOptions = None) -> List[SearchResult]:
         pass
@@ -139,5 +213,14 @@ class AsyncPGHybridStore(BaseHybridStore):
     async def keyword_search(self, query: str, k: int = 10, search_options: SearchOptions = None) -> List[SearchResult]:
         pass
 
-    async def upsert(self, documents: List[Document]) -> None:
-        pass
+    async def upsert(self, df: pd.DataFrame) -> None:
+        """
+        Insert or update records in the database from a pandas DataFrame.
+
+        Args:
+            df: A pandas DataFrame containing the data to insert or update.
+                Expected columns: id, metadata, contents, embedding
+        """
+        records = df.to_records(index=False)
+        await self.client.upsert(list(records))
+        logger.info(f"Inserted {len(df)} records into {self.vector_store_table}")
