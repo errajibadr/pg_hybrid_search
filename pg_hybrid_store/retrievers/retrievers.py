@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, List, Optional, Tuple
+import asyncpg
 import pandas as pd
 from openai import AsyncOpenAI
 
@@ -8,12 +9,13 @@ import time
 from pg_hybrid_store.store.async_pg_hybrid_store import AsyncPGHybridStore
 
 from pg_hybrid_store.retrievers.base import BaseVectorRetriever, BaseKeywordRetriever, BaseHybridRetriever
-from pg_hybrid_store.search_types import SearchOptions, SearchResult
+from pg_hybrid_store.search_types import HybridSearchResult, SearchOptions, SearchResult
 
 # from pg_hybrid_store.logger import setup_logger
-from pg_hybrid_store.config import get_settings
+from pg_hybrid_store.config import DatabaseSettings, get_settings
 
 from timescale_vector import client
+
 
 import logging
 
@@ -28,18 +30,14 @@ DEFAULT_SEARCH_OPTIONS = SearchOptions(
 class OpenAIVectorRetriever(BaseVectorRetriever):
     """Vector retriever using OpenAI embeddings."""
 
-    def __init__(self, store_client: AsyncPGHybridStore, embedding_model: str = None, embedding_dimensions: int = None):
+    def __init__(self, vector_store_client: client.Async, embed_fn: callable):
         """Initialize the vector retriever."""
-
-        self.settings = get_settings()
-        self.store_client = store_client
-        self.embedding_model = embedding_model or self.settings.vector_store.embedding_model
-        self.embedding_dimensions = embedding_dimensions or self.settings.vector_store.embedding_dimensions
-        self.client = AsyncOpenAI(api_key=self.settings.llm.api_key)
+        self.vector_store_client = vector_store_client
+        self.embed_fn = embed_fn
 
     async def get_embedding(self, text: str) -> List[float]:
         """Generate embedding using OpenAI API."""
-        return await self.store_client.get_embedding(text)
+        return await self.embed_fn(text)
 
     async def retrieve(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult] | pd.DataFrame:
         """
@@ -102,114 +100,72 @@ class OpenAIVectorRetriever(BaseVectorRetriever):
             start_date, end_date = options.get("time_range")
             search_args["uuid_time_filter"] = client.UUIDTimeRange(start_date, end_date)
 
-        results = await self.store_client.client.search(query_embedding, **search_args)
+        results = await self.vector_store_client.search(query_embedding, **search_args)
+        print(results[0])
         elapsed_time = time.time() - start_time
 
         logger.info(f"Search completed in {elapsed_time:.3f} seconds")
 
+        search_results = [
+            SearchResult(
+                id=str(r["id"]),
+                content=r["contents"],
+                metadata=r["metadata"],
+                distance=r["distance"],
+                search_type="semantic",
+            )
+            for r in results
+        ]
+
         if options.get("return_dataframe"):
-            return self._create_dataframe_from_results(results)
-        else:
-            search_results = [
-                SearchResult(
-                    id=str(r["id"]),
-                    content=r["contents"],
-                    metadata=r["metadata"],
-                    distance=r["distance"],
-                    search_type="semantic",
-                )
-                for r in results
-            ]
-            return search_results
-
-    def _create_dataframe_from_results(
-        self,
-        results: List[Tuple[Any, ...]],
-    ) -> pd.DataFrame:
-        """
-        Create a pandas DataFrame from the search results.
-
-        Args:
-            results: A list of tuples containing the search results.
-
-        Returns:
-            A pandas DataFrame containing the formatted search results.
-            DataFrame columns: id, metadata, content, distance, search_type
-        """
-        # Convert results to DataFrame
-        df = pd.DataFrame(results, columns=["id", "metadata", "content", "embedding", "distance"])
-
-        # Expand metadata column
-        # df = pd.concat([df.drop(["metadata"], axis=1), df["metadata"].apply(pd.Series)], axis=1)
-
-        # Convert id to string for better readability
-        df["id"] = df["id"].astype(str)
-        df["search_type"] = "semantic"
-        df = df.drop(columns=["embedding"])
-
-        return df
+            return self._create_dataframe_from_results(search_results)
+        return search_results
 
 
 class BM25KeywordRetriever(BaseKeywordRetriever):
     """Keyword retriever using BM25 ranking."""
 
-    def __init__(self, vector_store: AsyncPGHybridStore):
-        self.vector_store = vector_store
+    def __init__(self, vector_store_table: str, settings: DatabaseSettings):
+        self.vector_store_table = vector_store_table
+        self.pool = None
+        self.db_settings = settings
+
+    async def initialize(self):
+        if self.pool is None:
+            self.pool = await asyncpg.create_pool(self.db_settings.service_url)
 
     async def retrieve(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult] | pd.DataFrame:
         """Retrieve documents using BM25 ranking."""
+        if self.pool is None:
+            await self.initialize()
 
         options = options or DEFAULT_SEARCH_OPTIONS
         search_sql = f"""
         SELECT id, metadata, contents, paradedb.score(id) as distance
-        FROM {self.vector_store.vector_store_table}
+        FROM {self.vector_store_table}
         WHERE contents @@@ $1
         ORDER BY distance DESC
         LIMIT $2
         """
 
-        async with self.vector_store.pool.acquire() as conn:
+        async with self.pool.acquire() as conn:
             results = await conn.fetch(search_sql, query, options.get("limit", 5))
+            print(results[0])
+        search_results = [
+            SearchResult(
+                id=str(r["id"]),
+                content=r["contents"],
+                metadata=r["metadata"],
+                distance=r["distance"],
+                search_type="fulltext",
+            )
+            for r in results
+        ]
 
         if options.get("return_dataframe"):
-            return self._create_dataframe_from_results(results)
-        else:
-            return [
-                SearchResult(
-                    id=str(r["id"]),
-                    content=r["contents"],
-                    metadata=r["metadata"],
-                    distance=r["distance"],
-                    search_type="keyword",
-                )
-                for r in results
-            ]
+            return self._create_dataframe_from_results(search_results)
 
-    def _create_dataframe_from_results(
-        self,
-        results: List[Tuple[Any, ...]],
-    ) -> pd.DataFrame:
-        """
-        Create a pandas DataFrame from the search results.
-
-        Args:
-            results: A list of tuples containing the search results.
-
-        Returns:
-            A pandas DataFrame containing the formatted search results.
-            DataFrame columns: id, metadata, content, distance, search_type
-        """
-        # Convert results to DataFrame
-        df = pd.DataFrame(results, columns=["id", "metadata", "content", "distance"])
-
-        # Expand metadata column
-        # df = pd.concat([df.drop(["metadata"], axis=1), df["metadata"].apply(pd.Series)], axis=1)
-
-        # Convert id to string for better readability
-        df["id"] = df["id"].astype(str)
-        df["search_type"] = "keyword"
-
-        return df
+        return search_results
 
 
 class HybridRetriever(BaseHybridRetriever):
@@ -228,50 +184,71 @@ class HybridRetriever(BaseHybridRetriever):
     async def retrieve(
         self,
         query: str,
-        semantic_search_only: bool = False,
-        fulltext_search_only: bool = False,
         semantic_limit: int = 5,
         fulltext_limit: int = 5,
         metadata_filter: Optional[dict] = None,
         time_range: Optional[Tuple[datetime, datetime]] = None,
         predicates: Optional[List[Tuple[str, str, Any]]] = None,
-    ) -> List[SearchResult]:
-        """Retrieve documents using both methods."""
+        semantic_search_only: bool = False,
+        fulltext_search_only: bool = False,
+    ) -> List[HybridSearchResult]:
+        """Retrieve documents using both semantic and fulltext methods."""
         if semantic_search_only and fulltext_search_only:
             raise ValueError("Cannot perform both semantic and fulltext search simultaneously.")
 
-        # Split the limit between both retrievers
-        vector_options = SearchOptions(
-            limit=semantic_limit, metadata_filter=metadata_filter, time_range=time_range, predicates=predicates
+        vector_results = await self._get_vector_results(
+            query, semantic_limit, metadata_filter, time_range, predicates, fulltext_search_only
         )
-        keyword_options = SearchOptions(limit=fulltext_limit, metadata_filter=metadata_filter)
+        keyword_results = await self._get_keyword_results(query, fulltext_limit, metadata_filter, semantic_search_only)
 
-        # Get results from both retrievers
-        if not fulltext_search_only:
-            vector_results = await self.vector_retriever.retrieve(query, vector_options)
-        else:
-            vector_results = []
+        combined_results = self._combine_and_deduplicate_results(vector_results, keyword_results)
 
-        if not semantic_search_only:
-            keyword_results = await self.keyword_retriever.retrieve(query, keyword_options)
-        else:
-            keyword_results = []
+        if self.use_reranking:
+            return await self.rerank_results(query, combined_results, semantic_limit + fulltext_limit)
 
-        # Combine results
+        return combined_results[: semantic_limit + fulltext_limit]
+
+    async def _get_vector_results(self, query, limit, metadata_filter, time_range, predicates, fulltext_search_only):
+        if fulltext_search_only:
+            return []
+        vector_options = SearchOptions(
+            limit=limit, metadata_filter=metadata_filter, time_range=time_range, predicates=predicates
+        )
+        results = await self.vector_retriever.retrieve(query, vector_options)
+        return results
+
+    async def _get_keyword_results(self, query, limit, metadata_filter, semantic_search_only):
+        if semantic_search_only:
+            return []
+        keyword_options = SearchOptions(limit=limit, metadata_filter=metadata_filter)
+        results = await self.keyword_retriever.retrieve(query, keyword_options)
+        return results
+
+    def _combine_and_deduplicate_results(
+        self, vector_results: List[SearchResult], keyword_results: List[SearchResult]
+    ) -> List[HybridSearchResult]:
         combined_results = vector_results + keyword_results
-
-        # Deduplicate by ID
         seen_ids = set()
         unique_results = []
         for result in combined_results:
-            if result.get("id") not in seen_ids:
-                seen_ids.add(result.get("id"))
-                unique_results.append(result)
-
-        if self.use_reranking:
-            return await self.rerank_results(query, unique_results, semantic_limit)
-
-        return unique_results[: semantic_limit + fulltext_limit]
+            if result["id"] not in seen_ids:
+                hybrid_result = HybridSearchResult(
+                    id=result["id"],
+                    content=result["content"],
+                    metadata=result["metadata"],
+                    semantic_distance=result["distance"] if result["search_type"] == "semantic" else None,
+                    fulltext_distance=result["distance"] if result["search_type"] == "fulltext" else None,
+                )
+                seen_ids.add(result["id"])
+                unique_results.append(hybrid_result)
+            else:
+                # If the result exists in both, update the existing result
+                existing_result = next(r for r in unique_results if r["id"] == result["id"])
+                if result["search_type"] == "semantic":
+                    existing_result["semantic_distance"] = result["distance"]
+                elif result["search_type"] == "fulltext":
+                    existing_result["fulltext_distance"] = result["distance"]
+        return unique_results
 
     async def rerank_results(self, query: str, results: List[SearchResult], top_k: int) -> List[SearchResult]:
         """Rerank results using a reranking model."""

@@ -15,6 +15,31 @@ class BaseRetriever(ABC):
         """Retrieve documents based on the query."""
         pass
 
+    def _create_dataframe_from_results(
+        self,
+        results: List[SearchResult],
+    ) -> pd.DataFrame:
+        """
+        Create a pandas DataFrame from the search results.
+
+        Args:
+            results: A list of SearchResult objects containing the search results.
+
+        Returns:
+            A pandas DataFrame containing the formatted search results.
+            DataFrame columns: id, metadata, content, distance, search_type
+        """
+        # Convert results to DataFrame
+        df = pd.DataFrame(results, columns=["id", "metadata", "content", "distance", "search_type"])
+
+        # Expand metadata column
+        # df = pd.concat([df.drop(["metadata"], axis=1), df["metadata"].apply(pd.Series)], axis=1)
+
+        # Convert id to string for better readability
+        df["id"] = df["id"].astype(str)
+
+        return df
+
 
 class BaseVectorRetriever(BaseRetriever):
     """Base class for retrievers that use vector similarity."""

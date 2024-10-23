@@ -13,7 +13,7 @@ from openai import AsyncOpenAI
 
 from timescale_vector import client
 
-from src.config.config import get_settings
+from pg_hybrid_store.config import get_settings
 
 from logging import getLogger
 

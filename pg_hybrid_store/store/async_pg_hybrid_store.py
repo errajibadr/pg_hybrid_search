@@ -173,7 +173,7 @@ class AsyncPGHybridStore(BaseHybridStore):
             texts: The input texts to generate embeddings for.
 
         Returns:
-            A list of floats representing the embedding.
+            A list of tuples containing the index and the embedding.
         """
         start_time = time.time()
         embeddings = (
