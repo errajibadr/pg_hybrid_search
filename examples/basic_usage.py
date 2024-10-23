@@ -52,6 +52,9 @@ async def main():
     results = await hybrid_retriever.retrieve("What is the return policy?")
     print(results)
 
+    hybrid_retriever = vector_store.as_retriever()
+    results = await hybrid_retriever.retrieve("What is the return policy?")
+    print(results)
     # # Initialize RAG ingestor
     # ingestor = RAGIngestor(vector_store)
 

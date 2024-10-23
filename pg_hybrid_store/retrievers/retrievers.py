@@ -2,17 +2,14 @@ from datetime import datetime
 from typing import Any, List, Optional, Tuple
 import asyncpg
 import pandas as pd
-from openai import AsyncOpenAI
 
 import time
 
-from pg_hybrid_store.store.async_pg_hybrid_store import AsyncPGHybridStore
 
+from pg_hybrid_store.config import DatabaseSettings
 from pg_hybrid_store.retrievers.base import BaseVectorRetriever, BaseKeywordRetriever, BaseHybridRetriever
 from pg_hybrid_store.search_types import HybridSearchResult, SearchOptions, SearchResult
 
-# from pg_hybrid_store.logger import setup_logger
-from pg_hybrid_store.config import DatabaseSettings, get_settings
 
 from timescale_vector import client
 
@@ -256,3 +253,37 @@ class HybridRetriever(BaseHybridRetriever):
         # You could implement different reranking strategies here
         # For example, using Cohere's reranking API or other methods
         return results[:top_k]
+
+    def _rerank_results(self, query: str, combined_results: pd.DataFrame, top_n: int) -> pd.DataFrame:
+        """
+        Rerank the combined search results using Cohere.
+
+        Args:
+            query: The original search query.
+            combined_results: DataFrame containing the combined keyword and semantic search results.
+            top_n: The number of top results to return after reranking.
+
+        Returns:
+            A pandas DataFrame containing the reranked results.
+        """
+        rerank_results = self.cohere_client.v2.rerank(
+            model="rerank-english-v3.0",
+            query=query,
+            documents=combined_results["content"].tolist(),
+            top_n=top_n,
+            return_documents=True,
+        )
+
+        reranked_df = pd.DataFrame(
+            [
+                {
+                    "id": combined_results.iloc[result.index]["id"],
+                    "content": result.document,
+                    "search_type": combined_results.iloc[result.index]["search_type"],
+                    "relevance_score": result.relevance_score,
+                }
+                for result in rerank_results.results
+            ]
+        )
+
+        return reranked_df.sort_values("relevance_score", ascending=False).drop(columns=["relevance_score"])

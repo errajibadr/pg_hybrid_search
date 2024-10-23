@@ -3,6 +3,7 @@ from typing import List, Optional
 
 import pandas as pd
 
+from pg_hybrid_store.retrievers.retrievers import BM25KeywordRetriever, HybridRetriever, OpenAIVectorRetriever
 from pg_hybrid_store.search_types import SearchOptions, SearchResult, EmbeddingVector
 
 
@@ -50,16 +51,6 @@ class BaseHybridStore(ABC):
         pass
 
     @abstractmethod
-    async def semantic_search(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult]:
-        """Perform semantic search."""
-        pass
-
-    @abstractmethod
-    async def keyword_search(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult]:
-        """Perform keyword search."""
-        pass
-
-    @abstractmethod
-    async def hybrid_search(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult]:
-        """Perform hybrid search."""
+    async def as_retriever(self) -> HybridRetriever:
+        """Return a retriever for the vector store."""
         pass

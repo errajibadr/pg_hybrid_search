@@ -5,6 +5,7 @@ import asyncpg
 from openai import AsyncOpenAI
 import pandas as pd
 from pg_hybrid_store.config import PGHybridStoreSettings, get_settings
+from pg_hybrid_store.retrievers.retrievers import BM25KeywordRetriever, HybridRetriever, OpenAIVectorRetriever
 from pg_hybrid_store.search_types import SearchOptions, SearchResult
 from pg_hybrid_store.store.base import BaseHybridStore
 
@@ -202,16 +203,12 @@ class AsyncPGHybridStore(BaseHybridStore):
 
         return documents_formatted
 
-    async def hybrid_search(self, query: str, k: int = 10, search_options: SearchOptions = None) -> List[SearchResult]:
-        pass
-
-    async def semantic_search(
-        self, query: str, k: int = 10, search_options: SearchOptions = None
-    ) -> List[SearchResult]:
-        pass
-
-    async def keyword_search(self, query: str, k: int = 10, search_options: SearchOptions = None) -> List[SearchResult]:
-        pass
+    def as_retriever(self) -> HybridRetriever:
+        vector_retriever = OpenAIVectorRetriever(vector_store_client=self.client, embed_fn=self.get_embedding)
+        keyword_retriever = BM25KeywordRetriever(
+            vector_store_table=self.vector_store_table, settings=self.settings.database
+        )
+        return HybridRetriever(vector_retriever, keyword_retriever)
 
     async def upsert(self, df: pd.DataFrame) -> None:
         """
