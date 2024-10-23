@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "pg-hybrid-search"
+version = "0.1.0"
+description = ""
+authors = ["errajibadr <errajibadr95@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+pandas = "^2.2.3"
+langchain-community = "^0.3.3"
+asyncpg = "^0.30.0"
+openai = "^1.52.1"
+timescale-vector = "^0.0.7"
+
+[tool.poetry.group.dev.dependencies]
+# Add your development dependencies here, for example:
+pytest = "^6.2.5"
+# black = "^21.9b0"
+# flake8 = "^4.0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

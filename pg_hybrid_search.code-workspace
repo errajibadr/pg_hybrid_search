@@ -1,0 +1,11 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "python.autoComplete.extraPaths": ["${workspaceFolder}"],
+    "python.analysis.extraPaths": ["${workspaceFolder}"]
+  }
+}
