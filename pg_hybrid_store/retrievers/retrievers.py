@@ -1,27 +1,30 @@
+import logging
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, List, Optional, Tuple
+
 import asyncpg
 import pandas as pd
-
-import time
-
-
-from pg_hybrid_store.config import DatabaseSettings
-from pg_hybrid_store.retrievers.base import BaseVectorRetriever, BaseKeywordRetriever, BaseHybridRetriever
-from pg_hybrid_store.search_types import HybridSearchResult, SearchOptions, SearchResult
-
-
 from timescale_vector import client
 
-
-import logging
-from contextlib import asynccontextmanager
+from pg_hybrid_store.config import DatabaseSettings
+from pg_hybrid_store.retrievers.base import (
+    BaseHybridRetriever,
+    BaseKeywordRetriever,
+    BaseVectorRetriever,
+)
+from pg_hybrid_store.search_types import HybridSearchResult, SearchOptions, SearchResult
 
 logger = logging.getLogger(__name__)
 
 
 DEFAULT_SEARCH_OPTIONS = SearchOptions(
-    limit=5, return_dataframe=True, time_range=None, metadata_filter=None, predicates=None
+    limit=5,
+    return_dataframe=True,
+    time_range=None,
+    metadata_filter=None,
+    predicates=None,
 )
 
 
@@ -37,7 +40,9 @@ class OpenAIVectorRetriever(BaseVectorRetriever):
         """Generate embedding using OpenAI API."""
         return await self.embed_fn(text)
 
-    async def retrieve(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult] | pd.DataFrame:
+    async def retrieve(
+        self, query: str, options: Optional[SearchOptions] = None
+    ) -> List[SearchResult] | pd.DataFrame:
         """
         Query the vector database for similar embeddings based on input text.
 
@@ -65,7 +70,7 @@ class OpenAIVectorRetriever(BaseVectorRetriever):
                 vector_store.semantic_search("What are your shipping options?")
             Search with metadata filter:
                 vector_store.semantic_search("Shipping options", metadata_filter={"category": "Shipping"})
-        
+
         Predicates Examples:
             Search with predicates:
                 vector_store.semantic_search("Pricing", predicates=client.Predicates("price", ">", 100))
@@ -73,7 +78,7 @@ class OpenAIVectorRetriever(BaseVectorRetriever):
                 complex_pred = (client.Predicates("category", "==", "Electronics") & client.Predicates("price", "<", 1000)) | \
                                (client.Predicates("category", "==", "Books") & client.Predicates("rating", ">=", 4.5))
                 vector_store.semantic_search("High-quality products", predicates=complex_pred)
-        
+
         Time-based filtering:
             Search with time range:
                 vector_store.semantic_search("Recent updates", time_range=(datetime(2024, 1, 1), datetime(2024, 1, 31)))
@@ -137,7 +142,9 @@ class BM25KeywordRetriever(BaseKeywordRetriever):
         async with self.pool.acquire() as conn:
             yield conn
 
-    async def retrieve(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult] | pd.DataFrame:
+    async def retrieve(
+        self, query: str, options: Optional[SearchOptions] = None
+    ) -> List[SearchResult] | pd.DataFrame:
         """Retrieve documents using BM25 ranking."""
         if self.pool is None:
             await self.initialize()
@@ -200,22 +207,42 @@ class HybridRetriever(BaseHybridRetriever):
             raise ValueError("Cannot perform both semantic and fulltext search simultaneously.")
 
         vector_results = await self._get_vector_results(
-            query, semantic_limit, metadata_filter, time_range, predicates, fulltext_search_only
+            query,
+            semantic_limit,
+            metadata_filter,
+            time_range,
+            predicates,
+            fulltext_search_only,
         )
-        keyword_results = await self._get_keyword_results(query, fulltext_limit, metadata_filter, semantic_search_only)
+        keyword_results = await self._get_keyword_results(
+            query, fulltext_limit, metadata_filter, semantic_search_only
+        )
 
         combined_results = self._combine_and_deduplicate_results(vector_results, keyword_results)
 
         if self.use_reranking:
-            return await self.rerank_results(query, combined_results, semantic_limit + fulltext_limit)
+            return await self.rerank_results(
+                query, combined_results, semantic_limit + fulltext_limit
+            )
 
         return combined_results[: semantic_limit + fulltext_limit]
 
-    async def _get_vector_results(self, query, limit, metadata_filter, time_range, predicates, fulltext_search_only):
+    async def _get_vector_results(
+        self,
+        query,
+        limit,
+        metadata_filter,
+        time_range,
+        predicates,
+        fulltext_search_only,
+    ):
         if fulltext_search_only:
             return []
         vector_options = SearchOptions(
-            limit=limit, metadata_filter=metadata_filter, time_range=time_range, predicates=predicates
+            limit=limit,
+            metadata_filter=metadata_filter,
+            time_range=time_range,
+            predicates=predicates,
         )
         results = await self.vector_retriever.retrieve(query, vector_options)
         return results
@@ -239,8 +266,12 @@ class HybridRetriever(BaseHybridRetriever):
                     "id": result["id"],
                     "content": result["content"],
                     "metadata": result["metadata"],
-                    "semantic_distance": result["distance"] if result["search_type"] == "semantic" else None,
-                    "fulltext_distance": result["distance"] if result["search_type"] == "fulltext" else None,
+                    "semantic_distance": (
+                        result["distance"] if result["search_type"] == "semantic" else None
+                    ),
+                    "fulltext_distance": (
+                        result["distance"] if result["search_type"] == "fulltext" else None
+                    ),
                 }
                 seen_ids.add(result["id"])
                 unique_results.append(hybrid_result)
@@ -253,14 +284,18 @@ class HybridRetriever(BaseHybridRetriever):
                     existing_result["fulltext_distance"] = result["distance"]
         return unique_results
 
-    async def rerank_results(self, query: str, results: List[SearchResult], top_k: int) -> List[SearchResult]:
+    async def rerank_results(
+        self, query: str, results: List[SearchResult], top_k: int
+    ) -> List[SearchResult]:
         """Rerank results using a reranking model."""
         # Note: This is a placeholder for reranking logic
         # You could implement different reranking strategies here
         # For example, using Cohere's reranking API or other methods
         return results[:top_k]
 
-    def _rerank_results(self, query: str, combined_results: pd.DataFrame, top_n: int) -> pd.DataFrame:
+    def _rerank_results(
+        self, query: str, combined_results: pd.DataFrame, top_n: int
+    ) -> pd.DataFrame:
         """
         Rerank the combined search results using Cohere.
 
@@ -292,4 +327,6 @@ class HybridRetriever(BaseHybridRetriever):
             ]
         )
 
-        return reranked_df.sort_values("relevance_score", ascending=False).drop(columns=["relevance_score"])
+        return reranked_df.sort_values("relevance_score", ascending=False).drop(
+            columns=["relevance_score"]
+        )

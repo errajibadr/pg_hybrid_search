@@ -11,7 +11,9 @@ class BaseRetriever(ABC):
     """Base class for all retriever implementations."""
 
     @abstractmethod
-    async def retrieve(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult]:
+    async def retrieve(
+        self, query: str, options: Optional[SearchOptions] = None
+    ) -> List[SearchResult]:
         """Retrieve documents based on the query."""
         pass
 
@@ -72,6 +74,8 @@ class BaseHybridRetriever(BaseRetriever):
         pass
 
     @abstractmethod
-    async def rerank_results(self, query: str, results: List[SearchResult], top_k: int) -> List[SearchResult]:
+    async def rerank_results(
+        self, query: str, results: List[SearchResult], top_k: int
+    ) -> List[SearchResult]:
         """Rerank the combined results."""
         pass

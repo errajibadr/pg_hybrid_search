@@ -1,9 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, Union
 
-
 from timescale_vector import client
-
 
 Metadata = Dict[str, Any]
 EmbeddingVector = List[float]
@@ -13,7 +11,7 @@ TimeRange = Tuple[datetime, datetime]
 class SearchResult(TypedDict, total=False):
     id: str
     content: str
-    metadata: dict
+    metadata: dict[str, Any]
     distance: float
     search_type: Literal["semantic", "fulltext"]
 
@@ -21,7 +19,7 @@ class SearchResult(TypedDict, total=False):
 class HybridSearchResult(TypedDict, total=False):
     id: str
     content: str
-    metadata: dict
+    metadata: dict[str, Any]
     semantic_distance: Optional[float]
     fulltext_distance: Optional[float]
 

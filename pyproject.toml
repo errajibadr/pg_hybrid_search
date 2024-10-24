@@ -1,9 +1,20 @@
 [tool.poetry]
 name = "pg-hybrid-store"
 version = "0.1.0"
-description = ""
+description = "A hybrid storage solution using PostgreSQL and vector embeddings"
 authors = ["errajibadr <errajibadr95@gmail.com>"]
+license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/errajibadr/pg-hybrid-store"
+repository = "https://github.com/errajibadr/pg-hybrid-store"
+keywords = ["postgresql", "vector", "hybrid", "storage", "search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
@@ -18,13 +29,39 @@ timescale-vector = "^0.0.7"
 # Add your development dependencies here, for example:
 pytest = "^8.3.3"
 pytest-asyncio = "^0.24.0"
-# black = "^21.9b0"
-# flake8 = "^4.0.1"
+black = "^24.10.0"
+flake8 = "^7.1.1"
+mypy = "^1.13.0"
+pre-commit = "^4.0.1"
+types-requests = "^2.31.0.20240311"
+ruff = "^0.7.0"
+
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E266", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E266"]

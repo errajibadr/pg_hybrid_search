@@ -1,13 +1,12 @@
+import logging
 import os
 from typing import Optional
+
+from dotenv import load_dotenv
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
-from dotenv import load_dotenv
-
 from pg_hybrid_store.constants import EMBEDDING_MODEL_DIMENSIONS
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,9 @@ class VectorStoreSettings(BaseSettings):
         embedding_model = values.data.get("embedding_model")
         if embedding_model in EMBEDDING_MODEL_DIMENSIONS:
             if v != EMBEDDING_MODEL_DIMENSIONS[embedding_model]:
-                logger.warning("Embedding dimensions do not match the expected dimensions for the embedding model")
+                logger.warning(
+                    "Embedding dimensions do not match the expected dimensions for the embedding model"
+                )
                 return EMBEDDING_MODEL_DIMENSIONS[embedding_model]
         return v
 
@@ -66,7 +67,9 @@ class PGHybridStoreSettings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
 
 
-def get_settings(vector_store_settings: Optional[VectorStoreSettings] = None) -> PGHybridStoreSettings:
+def get_settings(
+    vector_store_settings: Optional[VectorStoreSettings] = None,
+) -> PGHybridStoreSettings:
     if vector_store_settings is None:
         vector_store_settings = VectorStoreSettings()
     return PGHybridStoreSettings(vector_store=vector_store_settings)

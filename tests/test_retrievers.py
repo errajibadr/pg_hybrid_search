@@ -1,15 +1,16 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import pandas as pd
 
+import pandas as pd
+import pytest
+
+from pg_hybrid_store.config import DatabaseSettings
 from pg_hybrid_store.retrievers.retrievers import (
-    OpenAIVectorRetriever,
     BM25KeywordRetriever,
     HybridRetriever,
-    SearchResult,
     HybridSearchResult,
+    OpenAIVectorRetriever,
+    SearchResult,
 )
-from pg_hybrid_store.config import DatabaseSettings
 
 
 @pytest.fixture(scope="function")
@@ -30,13 +31,25 @@ def mock_db_pool():
 @pytest.fixture(scope="function")
 def sample_search_results():
     return [
-        {"id": "1", "contents": "Content 1", "metadata": {"key": "value1"}, "distance": 0.1},
-        {"id": "2", "contents": "Content 2", "metadata": {"key": "value2"}, "distance": 0.2},
+        {
+            "id": "1",
+            "contents": "Content 1",
+            "metadata": {"key": "value1"},
+            "distance": 0.1,
+        },
+        {
+            "id": "2",
+            "contents": "Content 2",
+            "metadata": {"key": "value2"},
+            "distance": 0.2,
+        },
     ]
 
 
 @pytest.mark.asyncio
-async def test_openai_vector_retriever(mock_vector_store_client, mock_embed_fn, sample_search_results):
+async def test_openai_vector_retriever(
+    mock_vector_store_client, mock_embed_fn, sample_search_results
+):
     retriever = OpenAIVectorRetriever(mock_vector_store_client, mock_embed_fn)
     mock_vector_store_client.search.return_value = sample_search_results
 
@@ -44,7 +57,13 @@ async def test_openai_vector_retriever(mock_vector_store_client, mock_embed_fn, 
 
     assert isinstance(results, pd.DataFrame)
     assert len(results) == 2
-    assert list(results.columns) == ["id", "metadata", "content", "distance", "search_type"]
+    assert list(results.columns) == [
+        "id",
+        "metadata",
+        "content",
+        "distance",
+        "search_type",
+    ]
     assert results["search_type"].unique() == ["semantic"]
 
     mock_embed_fn.assert_called_once_with("test query")
@@ -60,8 +79,18 @@ async def test_bm25_keyword_retriever(mock_db_pool):
     # Create a mock connection
     mock_connection = AsyncMock()
     mock_connection.fetch.return_value = [
-        {"id": "1", "contents": "Content 1", "metadata": {"key": "value1"}, "distance": 0.1},
-        {"id": "2", "contents": "Content 2", "metadata": {"key": "value2"}, "distance": 0.2},
+        {
+            "id": "1",
+            "contents": "Content 1",
+            "metadata": {"key": "value1"},
+            "distance": 0.1,
+        },
+        {
+            "id": "2",
+            "contents": "Content 2",
+            "metadata": {"key": "value2"},
+            "distance": 0.2,
+        },
     ]
 
     # Create an async context manager that returns mock_connection
@@ -77,7 +106,13 @@ async def test_bm25_keyword_retriever(mock_db_pool):
 
     assert isinstance(results, pd.DataFrame)
     assert len(results) == 2
-    assert list(results.columns) == ["id", "metadata", "content", "distance", "search_type"]
+    assert list(results.columns) == [
+        "id",
+        "metadata",
+        "content",
+        "distance",
+        "search_type",
+    ]
     assert results["search_type"].unique() == ["fulltext"]
 
     mock_db_pool.acquire.assert_called_once()
@@ -90,12 +125,36 @@ async def test_hybrid_retriever():
     mock_keyword_retriever = AsyncMock()
 
     vector_results = [
-        SearchResult(id="1", content="Content 1", metadata={"key": "value1"}, distance=0.1, search_type="semantic"),
-        SearchResult(id="2", content="Content 2", metadata={"key": "value2"}, distance=0.2, search_type="semantic"),
+        SearchResult(
+            id="1",
+            content="Content 1",
+            metadata={"key": "value1"},
+            distance=0.1,
+            search_type="semantic",
+        ),
+        SearchResult(
+            id="2",
+            content="Content 2",
+            metadata={"key": "value2"},
+            distance=0.2,
+            search_type="semantic",
+        ),
     ]
     keyword_results = [
-        SearchResult(id="3", content="Content 3", metadata={"key": "value3"}, distance=0.3, search_type="fulltext"),
-        SearchResult(id="4", content="Content 4", metadata={"key": "value4"}, distance=0.4, search_type="fulltext"),
+        SearchResult(
+            id="3",
+            content="Content 3",
+            metadata={"key": "value3"},
+            distance=0.3,
+            search_type="fulltext",
+        ),
+        SearchResult(
+            id="4",
+            content="Content 4",
+            metadata={"key": "value4"},
+            distance=0.4,
+            search_type="fulltext",
+        ),
     ]
 
     mock_vector_retriever.retrieve.return_value = vector_results
@@ -106,7 +165,10 @@ async def test_hybrid_retriever():
     results = await retriever.retrieve("test query", semantic_limit=2, fulltext_limit=2)
 
     assert len(results) == 4
-    assert all(isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys()) for r in results)
+    assert all(
+        isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys())
+        for r in results
+    )
     assert [r["id"] for r in results] == ["1", "2", "3", "4"]
 
     mock_vector_retriever.retrieve.assert_called_once()
@@ -119,18 +181,35 @@ async def test_hybrid_retriever_semantic_only():
     mock_keyword_retriever = AsyncMock()
 
     vector_results = [
-        SearchResult(id="1", content="Content 1", metadata={"key": "value1"}, distance=0.1, search_type="semantic"),
-        SearchResult(id="2", content="Content 2", metadata={"key": "value2"}, distance=0.2, search_type="semantic"),
+        SearchResult(
+            id="1",
+            content="Content 1",
+            metadata={"key": "value1"},
+            distance=0.1,
+            search_type="semantic",
+        ),
+        SearchResult(
+            id="2",
+            content="Content 2",
+            metadata={"key": "value2"},
+            distance=0.2,
+            search_type="semantic",
+        ),
     ]
 
     mock_vector_retriever.retrieve.return_value = vector_results
 
     retriever = HybridRetriever(mock_vector_retriever, mock_keyword_retriever)
 
-    results = await retriever.retrieve("test query", semantic_limit=2, fulltext_limit=2, semantic_search_only=True)
+    results = await retriever.retrieve(
+        "test query", semantic_limit=2, fulltext_limit=2, semantic_search_only=True
+    )
 
     assert len(results) == 2
-    assert all(isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys()) for r in results)
+    assert all(
+        isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys())
+        for r in results
+    )
     assert [r["id"] for r in results] == ["1", "2"]
 
     mock_vector_retriever.retrieve.assert_called_once()
@@ -143,18 +222,35 @@ async def test_hybrid_retriever_fulltext_only():
     mock_keyword_retriever = AsyncMock()
 
     keyword_results = [
-        SearchResult(id="3", content="Content 3", metadata={"key": "value3"}, distance=0.3, search_type="fulltext"),
-        SearchResult(id="4", content="Content 4", metadata={"key": "value4"}, distance=0.4, search_type="fulltext"),
+        SearchResult(
+            id="3",
+            content="Content 3",
+            metadata={"key": "value3"},
+            distance=0.3,
+            search_type="fulltext",
+        ),
+        SearchResult(
+            id="4",
+            content="Content 4",
+            metadata={"key": "value4"},
+            distance=0.4,
+            search_type="fulltext",
+        ),
     ]
 
     mock_keyword_retriever.retrieve.return_value = keyword_results
 
     retriever = HybridRetriever(mock_vector_retriever, mock_keyword_retriever)
 
-    results = await retriever.retrieve("test query", semantic_limit=2, fulltext_limit=2, fulltext_search_only=True)
+    results = await retriever.retrieve(
+        query="test query", semantic_limit=2, fulltext_limit=2, fulltext_search_only=True
+    )
 
     assert len(results) == 2
-    assert all(isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys()) for r in results)
+    assert all(
+        isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys())
+        for r in results
+    )
     assert [r["id"] for r in results] == ["3", "4"]
 
     mock_vector_retriever.retrieve.assert_not_called()
@@ -167,12 +263,36 @@ async def test_hybrid_retriever_with_reranking():
     mock_keyword_retriever = AsyncMock()
 
     vector_results = [
-        SearchResult(id="1", content="Content 1", metadata={"key": "value1"}, distance=0.1, search_type="semantic"),
-        SearchResult(id="2", content="Content 2", metadata={"key": "value2"}, distance=0.2, search_type="semantic"),
+        SearchResult(
+            id="1",
+            content="Content 1",
+            metadata={"key": "value1"},
+            distance=0.1,
+            search_type="semantic",
+        ),
+        SearchResult(
+            id="2",
+            content="Content 2",
+            metadata={"key": "value2"},
+            distance=0.2,
+            search_type="semantic",
+        ),
     ]
     keyword_results = [
-        SearchResult(id="1", content="Content 1", metadata={"key": "value1"}, distance=0.3, search_type="fulltext"),
-        SearchResult(id="4", content="Content 4", metadata={"key": "value4"}, distance=0.4, search_type="fulltext"),
+        SearchResult(
+            id="1",
+            content="Content 1",
+            metadata={"key": "value1"},
+            distance=0.3,
+            search_type="fulltext",
+        ),
+        SearchResult(
+            id="4",
+            content="Content 4",
+            metadata={"key": "value4"},
+            distance=0.4,
+            search_type="fulltext",
+        ),
     ]
 
     mock_vector_retriever.retrieve.return_value = vector_results
@@ -202,7 +322,8 @@ async def test_hybrid_retriever_with_reranking():
 
         assert len(results) == 2
         assert all(
-            isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys()) for r in results
+            isinstance(r, dict) and set(r.keys()) == set(HybridSearchResult.__annotations__.keys())
+            for r in results
         )
         assert [r["id"] for r in results] == ["2", "3"]
 

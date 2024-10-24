@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 
-
 import pandas as pd
-
 
 from pg_hybrid_store.search_types import EmbeddingVector
 

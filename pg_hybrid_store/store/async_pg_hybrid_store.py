@@ -1,18 +1,21 @@
-import time
-from typing import Any, List, Tuple
-import uuid
-import asyncpg
-from openai import AsyncOpenAI
-import pandas as pd
-from pg_hybrid_store.config import PGHybridStoreSettings, get_settings
-from pg_hybrid_store.retrievers.retrievers import BM25KeywordRetriever, HybridRetriever, OpenAIVectorRetriever
-from pg_hybrid_store.search_types import SearchOptions, SearchResult
-from pg_hybrid_store.store.base import BaseHybridStore
-
-from timescale_vector import client as timescale_vector_client
-from langchain_core.documents import Document
-
 import logging
+import time
+import uuid
+from typing import Any, List, Tuple
+
+import asyncpg
+import pandas as pd
+from langchain_core.documents import Document
+from openai import AsyncOpenAI
+from timescale_vector import client as timescale_vector_client
+
+from pg_hybrid_store.config import PGHybridStoreSettings, get_settings
+from pg_hybrid_store.retrievers.retrievers import (
+    BM25KeywordRetriever,
+    HybridRetriever,
+    OpenAIVectorRetriever,
+)
+from pg_hybrid_store.store.base import BaseHybridStore
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +207,9 @@ class AsyncPGHybridStore(BaseHybridStore):
         return documents_formatted
 
     def as_retriever(self) -> HybridRetriever:
-        vector_retriever = OpenAIVectorRetriever(vector_store_client=self.client, embed_fn=self.get_embedding)
+        vector_retriever = OpenAIVectorRetriever(
+            vector_store_client=self.client, embed_fn=self.get_embedding
+        )
         keyword_retriever = BM25KeywordRetriever(
             vector_store_table=self.vector_store_table, settings=self.settings.database
         )
