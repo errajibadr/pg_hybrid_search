@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+
 
 import pandas as pd
 
-from pg_hybrid_store.retrievers.retrievers import BM25KeywordRetriever, HybridRetriever, OpenAIVectorRetriever
-from pg_hybrid_store.search_types import SearchOptions, SearchResult, EmbeddingVector
+
+from pg_hybrid_store.search_types import EmbeddingVector
 
 
 class BaseHybridStore(ABC):
@@ -51,6 +51,6 @@ class BaseHybridStore(ABC):
         pass
 
     @abstractmethod
-    async def as_retriever(self) -> HybridRetriever:
+    async def as_retriever(self) -> "BaseHybridStore":
         """Return a retriever for the vector store."""
         pass

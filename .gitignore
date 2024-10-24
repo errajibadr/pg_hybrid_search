@@ -3,4 +3,35 @@
 *.pyc
 
 .env
-    
+# Poetry lock file
+poetry.lock
+
+# Poetry's virtual environment
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.*
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

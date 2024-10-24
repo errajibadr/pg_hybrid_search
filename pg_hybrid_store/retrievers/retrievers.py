@@ -15,6 +15,7 @@ from timescale_vector import client
 
 
 import logging
+from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,11 @@ class BM25KeywordRetriever(BaseKeywordRetriever):
         if self.pool is None:
             self.pool = await asyncpg.create_pool(self.db_settings.service_url)
 
+    @asynccontextmanager
+    async def get_connection(self):
+        async with self.pool.acquire() as conn:
+            yield conn
+
     async def retrieve(self, query: str, options: Optional[SearchOptions] = None) -> List[SearchResult] | pd.DataFrame:
         """Retrieve documents using BM25 ranking."""
         if self.pool is None:
@@ -145,9 +151,9 @@ class BM25KeywordRetriever(BaseKeywordRetriever):
         LIMIT $2
         """
 
-        async with self.pool.acquire() as conn:
-            results = await conn.fetch(search_sql, query, options.get("limit", 5))
-            print(results[0])
+        async with self.get_connection() as conn:
+            results = await conn.fetch(search_sql, query, options["limit"])
+
         search_results = [
             SearchResult(
                 id=str(r["id"]),
@@ -229,13 +235,13 @@ class HybridRetriever(BaseHybridRetriever):
         unique_results = []
         for result in combined_results:
             if result["id"] not in seen_ids:
-                hybrid_result = HybridSearchResult(
-                    id=result["id"],
-                    content=result["content"],
-                    metadata=result["metadata"],
-                    semantic_distance=result["distance"] if result["search_type"] == "semantic" else None,
-                    fulltext_distance=result["distance"] if result["search_type"] == "fulltext" else None,
-                )
+                hybrid_result: HybridSearchResult = {
+                    "id": result["id"],
+                    "content": result["content"],
+                    "metadata": result["metadata"],
+                    "semantic_distance": result["distance"] if result["search_type"] == "semantic" else None,
+                    "fulltext_distance": result["distance"] if result["search_type"] == "fulltext" else None,
+                }
                 seen_ids.add(result["id"])
                 unique_results.append(hybrid_result)
             else:

@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "pg-hybrid-search"
+name = "pg-hybrid-store"
 version = "0.1.0"
 description = ""
 authors = ["errajibadr <errajibadr95@gmail.com>"]
@@ -13,12 +13,18 @@ asyncpg = "^0.30.0"
 openai = "^1.52.1"
 timescale-vector = "^0.0.7"
 
+
 [tool.poetry.group.dev.dependencies]
 # Add your development dependencies here, for example:
-pytest = "^6.2.5"
+pytest = "^8.3.3"
+pytest-asyncio = "^0.24.0"
 # black = "^21.9b0"
 # flake8 = "^4.0.1"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
