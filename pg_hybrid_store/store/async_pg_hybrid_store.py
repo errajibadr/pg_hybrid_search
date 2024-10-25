@@ -304,6 +304,7 @@ class AsyncPGHybridStore(BaseHybridStore):
         WHERE
             am.amname = 'diskann';
         """
+        conn = None
         try:
             conn = await asyncpg.connect(service_url)
             async with conn.transaction():
