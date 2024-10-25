@@ -202,7 +202,17 @@ class HybridRetriever(BaseHybridRetriever):
         semantic_search_only: bool = False,
         fulltext_search_only: bool = False,
     ) -> List[HybridSearchResult]:
-        """Retrieve documents using both semantic and fulltext methods."""
+        """Retrieve documents using both semantic and fulltext methods.
+
+        returns a list of HybridSearchResult objects
+        HybridSearchResult is a dictionary with the following keys:
+        - id
+        - content
+        - metadata
+        - semantic_distance
+        - fulltext_distance
+
+        """
         if semantic_search_only and fulltext_search_only:
             raise ValueError("Cannot perform both semantic and fulltext search simultaneously.")
 
