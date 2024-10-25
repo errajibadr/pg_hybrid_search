@@ -207,6 +207,19 @@ class AsyncPGHybridStore(BaseHybridStore):
         return documents_formatted
 
     def as_retriever(self) -> HybridRetriever:
+        """returns Hybrid Retriever
+
+        usage:
+        ```python
+        retriever = vector_store.as_retriever()
+        results = retriever.retrieve("What are your shipping options?")
+        ```
+
+        Returns:
+            HybridRetriever: A HybridRetriever object
+            uses both vector and keyword retrieval
+
+        """
         vector_retriever = OpenAIVectorRetriever(
             vector_store_client=self.client, embed_fn=self.get_embedding
         )
@@ -226,3 +239,44 @@ class AsyncPGHybridStore(BaseHybridStore):
         records = df.to_records(index=False)
         await self.client.upsert(list(records))
         logger.info(f"Inserted {len(df)} records into {self.vector_store_table}")
+
+    async def delete(
+        self,
+        ids: List[str] = None,
+        metadata_filter: dict = None,
+        delete_all: bool = False,
+    ) -> None:
+        """Delete records from the vector database.
+
+        Args:
+            ids (List[str], optional): A list of record IDs to delete.
+            metadata_filter (dict, optional): A dictionary of metadata key-value pairs to filter records for deletion.
+            delete_all (bool, optional): A boolean flag to delete all records.
+
+        Raises:
+            ValueError: If no deletion criteria are provided or if multiple criteria are provided.
+
+        Examples:
+            Delete by IDs:
+                vector_store.delete(ids=["8ab544ae-766a-11ef-81cb-decf757b836d"])
+
+            Delete by metadata filter:
+                vector_store.delete(metadata_filter={"category": "Shipping"})
+
+            Delete all records:
+                vector_store.delete(delete_all=True)
+        """
+        if sum(bool(x) for x in (ids, metadata_filter, delete_all)) != 1:
+            raise ValueError("Provide exactly one of: ids, metadata_filter, or delete_all")
+
+        if delete_all:
+            await self.client.delete_all()
+            logging.info(f"Deleted all records from {self.vector_store_table}")
+        elif ids:
+            await self.client.delete_by_ids(ids)
+            logging.info(f"Deleted {len(ids)} records from {self.vector_store_table}")
+        elif metadata_filter:
+            resp = await self.client.delete_by_metadata(metadata_filter)
+            logging.info(
+                f"Deleted records matching metadata filter from {self.vector_store_table}, {resp}"
+            )
