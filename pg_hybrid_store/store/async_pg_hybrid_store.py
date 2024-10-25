@@ -280,3 +280,39 @@ class AsyncPGHybridStore(BaseHybridStore):
             logging.info(
                 f"Deleted records matching metadata filter from {self.vector_store_table}, {resp}"
             )
+
+    @staticmethod
+    async def list_vector_stores(service_url: str) -> List[str]:
+        """
+        List all vector stores in the database.
+
+        Args:
+            service_url: The URL of the DB service.
+
+        Returns:
+            A list of vector store names.
+        """
+        list_vector_stores_query = """
+        SELECT
+            i.indrelid::regclass AS table_name
+        FROM
+            pg_index i
+        JOIN
+            pg_class c ON c.oid = i.indexrelid
+        JOIN
+            pg_am am ON am.oid = c.relam
+        WHERE
+            am.amname = 'diskann';
+        """
+        try:
+            conn = await asyncpg.connect(service_url)
+            async with conn.transaction():
+                rows = await conn.fetch(list_vector_stores_query)
+                vector_stores = [row["table_name"] for row in rows]
+                return vector_stores
+        except Exception as e:
+            logger.error(f"Error while listing vector stores: {str(e)}")
+            raise e
+        finally:
+            if conn:
+                await conn.close()
