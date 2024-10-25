@@ -14,12 +14,12 @@ class BaseHybridStore(ABC):
         pass
 
     @abstractmethod
-    async def create_tables(self) -> None:
+    async def create_store(self) -> None:
         """Create necessary database tables."""
         pass
 
     @abstractmethod
-    async def drop_tables(self) -> None:
+    async def drop_store(self) -> None:
         """Drop database tables."""
         pass
 

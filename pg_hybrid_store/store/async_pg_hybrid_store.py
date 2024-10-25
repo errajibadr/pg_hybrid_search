@@ -1,6 +1,7 @@
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any, List, Tuple
 
 import asyncpg
@@ -24,7 +25,7 @@ class AsyncPGHybridStore(BaseHybridStore):
     def __init__(
         self,
         vector_store_table: str,
-        embedding_client: AsyncOpenAI,
+        embedding_client: AsyncOpenAI | None = None,
         settings: PGHybridStoreSettings | None = None,
         **kwargs,
     ):
@@ -45,19 +46,46 @@ class AsyncPGHybridStore(BaseHybridStore):
             # time_partition_interval=self.settings.database.time_partition_interval,
         )
 
-        self.pool = None
+        self.pool: asyncpg.Pool | None = None
 
     async def initialize_pool(self):
         """Initialize the connection pool"""
+        if self.pool is not None:
+            return
+
+        self.pool = await asyncpg.create_pool(
+            self.settings.database.service_url,
+            min_size=1,
+            max_size=10,
+            timeout=300,
+            max_inactive_connection_lifetime=300,
+        )
+
+    async def close_pool(self):
+        """Close the connection pool"""
+        if self.pool is not None:
+            await self.pool.close()
+            self.pool = None
+
+    @asynccontextmanager
+    async def connection(self):
+        """Get a connection from the pool"""
         if self.pool is None:
-            self.pool = await asyncpg.create_pool(self.settings.database.service_url)
+            await self.initialize_pool()
+
+        async with self.pool.acquire() as conn:
+            try:
+                yield conn
+            except Exception as e:
+                logger.error(f"Error while getting connection: {str(e)}")
+                await conn.execute("ROLLBACK")
+                raise e
 
     async def setup_store(self, recreate: bool = False, recreate_indexes: bool = False) -> None:
         """Setup the vector store"""
-        await self.initialize_pool()
         if recreate:
-            await self.drop_tables()
-        await self.create_tables()
+            await self.drop_store()
+        await self.create_store()
         if not recreate and recreate_indexes:
             await self.drop_indexes()
             logger.info(f"Indexes dropped for {self.vector_store_table}")
@@ -65,12 +93,16 @@ class AsyncPGHybridStore(BaseHybridStore):
         await self.create_bm25_search_index()
         logger.info("Vector store setup complete")
 
-    async def create_tables(self) -> None:
+    def attach_embedding_client(self, embedding_client: AsyncOpenAI):
+        """Attach an embedding client to the store"""
+        self.embedding_client = embedding_client
+
+    async def create_store(self) -> None:
         """Create the necessary tables in the database"""
         await self.client.create_tables()
         logger.info(f"Tables created  {self.vector_store_table}")
 
-    async def drop_tables(self) -> None:
+    async def drop_store(self) -> None:
         """Drop the tables in the database"""
         await self.client.drop_table()
         logger.info(f"Tables dropped  {self.vector_store_table}")
@@ -97,7 +129,7 @@ class AsyncPGHybridStore(BaseHybridStore):
         """
 
         try:
-            async with self.pool.acquire() as conn:
+            async with self.connection() as conn:
                 async with conn.transaction():
                     await conn.execute(create_bm25_index_sql)
                 logger.info(f"BM25 index '{index_name}_bm25_index' created or already exists.")
@@ -119,7 +151,7 @@ class AsyncPGHybridStore(BaseHybridStore):
         index_name = f"{self.vector_store_table}"
         drop_index_sql = f"CALL paradedb.drop_bm25('{index_name}');"
         try:
-            async with self.pool.acquire() as conn:
+            async with self.connection() as conn:
                 async with conn.transaction():
                     await conn.execute(drop_index_sql)
             logger.info(f"BM25 index '{index_name}_bm25_index' dropped successfully.")
@@ -131,17 +163,12 @@ class AsyncPGHybridStore(BaseHybridStore):
         """Refresh the BM25 index in the database"""
         refresh_index_sql = f"VACUUM '{self.vector_store_table}';"
         try:
-            async with self.pool.acquire() as conn:
+            async with self.connection() as conn:
                 async with conn.transaction():
                     await conn.execute(refresh_index_sql)
         except Exception as e:
             logger.error(f"Error while refreshing BM25 index: {str(e)}")
             raise e
-
-    async def close(self):
-        """Close the connection pool"""
-        if self.pool:
-            await self.pool.close()
 
     async def get_embedding(self, text: str) -> List[float]:
         """
@@ -153,6 +180,11 @@ class AsyncPGHybridStore(BaseHybridStore):
         Returns:
             A list of floats representing the embedding.
         """
+        if self.embedding_client is None:
+            raise ValueError(
+                "Embedding client is not attached, use attach_embedding_client to attach one or initialize the store with an embedding client"
+            )
+
         text = text.replace("\n", " ")
         start_time = time.time()
         embedding = (
@@ -179,6 +211,11 @@ class AsyncPGHybridStore(BaseHybridStore):
         Returns:
             A list of tuples containing the index and the embedding.
         """
+        if self.embedding_client is None:
+            raise ValueError(
+                "Embedding client is not attached, use attach_embedding_client to attach one or initialize the store with an embedding client"
+            )
+
         start_time = time.time()
         embeddings = (
             await self.embedding_client.embeddings.create(
