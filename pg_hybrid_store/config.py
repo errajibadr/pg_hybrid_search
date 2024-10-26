@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 from pydantic import Field, field_validator
@@ -23,6 +23,7 @@ class VectorStoreSettings(BaseSettings):
 
     embedding_model: str = Field(default="text-embedding-3-small")
     embedding_dimensions: int = Field(default=1536)
+    distance_type: Literal["cosine", "euclidean"] = Field(default="cosine")
 
     @field_validator("embedding_dimensions")
     def set_embedding_dimensions(cls, v, values):
