@@ -7,6 +7,7 @@ import uuid
 import pandas as pd
 from openai import AsyncOpenAI
 
+from pg_hybrid_store.config import VectorStoreSettings, get_settings
 from pg_hybrid_store.retrievers.retrievers import (
     BM25KeywordRetriever,
     HybridRetriever,
@@ -40,9 +41,19 @@ async def _create_df(embedding_client):
 async def main():
     # Initialize vector store
     embedding_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    vector_store = AsyncPGHybridStore(
-        vector_store_table="example_store", embedding_client=embedding_client
+    settings = get_settings(
+        VectorStoreSettings(
+            embedding_model="text-embedding-3-small",
+            embedding_dimensions=1536,
+            distance_type="euclidean",
+        )
     )
+    vector_store = AsyncPGHybridStore(
+        vector_store_table="example_store", embedding_client=embedding_client, settings=settings
+    )
+
+    vector_stores = await vector_store.list_vector_stores(settings.database.service_url)
+    print(vector_stores)
 
     ## Setup store and upsert data
     await vector_store.setup_store(recreate=True, recreate_indexes=True)
