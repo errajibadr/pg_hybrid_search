@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from timescale_vector import client as timescale_vector_client
 
 from pg_hybrid_store.config import PGHybridStoreSettings, get_settings
+from pg_hybrid_store.queries import LIST_VECTOR_STORES_QUERY
 from pg_hybrid_store.retrievers.retrievers import (
     BM25KeywordRetriever,
     HybridRetriever,
@@ -43,6 +44,7 @@ class AsyncPGHybridStore(BaseHybridStore):
             service_url=self.settings.database.service_url,
             table_name=self.vector_store_table,
             num_dimensions=self.settings.vector_store.embedding_dimensions,
+            distance_type=self.settings.vector_store.distance_type,
             # time_partition_interval=self.settings.database.time_partition_interval,
         )
 
@@ -109,11 +111,22 @@ class AsyncPGHybridStore(BaseHybridStore):
 
     async def create_embedding_index(self) -> None:
         """Create the StreamingDiskANN index to spseed up similarity search"""
+        if (
+            self.settings.vector_store.embedding_dimensions >= 2000
+            or self.settings.vector_store.distance_type != "cosine"
+        ):
+            logger.warning(
+                "Embedding index creation skipped -- embedding dimensions are greater than 2000. Not supported by TimescaleDB"
+            )
+            return
         try:
             await self.client.create_embedding_index(timescale_vector_client.DiskAnnIndex())
             logger.info(f"DiskAnnIndex created for {self.vector_store_table}")
         except asyncpg.exceptions.DuplicateTableError as e:
             logger.info(f"Error while creating DiskAnnIndex: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error while creating DiskAnnIndex: {str(e)}")
+            raise e
 
     async def create_bm25_search_index(self):
         """Create a BM25 index for full-text search if it doesn't exist."""
@@ -319,34 +332,30 @@ class AsyncPGHybridStore(BaseHybridStore):
             )
 
     @staticmethod
-    async def list_vector_stores(service_url: str) -> List[str]:
+    async def list_vector_stores(service_url: str) -> List[dict]:
         """
-        List all vector stores in the database.
+        List all vector stores in the database with detailed information.
 
         Args:
             service_url: The URL of the DB service.
 
         Returns:
-            A list of vector store names.
+            A list of dictionaries containing information about each vector store:
+            - table_schema: The schema name
+            - table_name: The table name
+            - vector_column: The name of the vector column
+            - table_size: Pretty-printed size of the table
+            - row_count: Number of rows in the table
+            - has_diskann_index: Whether the table has a DiskANN index
+            - vector_dimension: The dimension of the vector column
         """
-        list_vector_stores_query = """
-        SELECT
-            i.indrelid::regclass AS table_name
-        FROM
-            pg_index i
-        JOIN
-            pg_class c ON c.oid = i.indexrelid
-        JOIN
-            pg_am am ON am.oid = c.relam
-        WHERE
-            am.amname = 'diskann';
-        """
+
         conn = None
         try:
             conn = await asyncpg.connect(service_url)
             async with conn.transaction():
-                rows = await conn.fetch(list_vector_stores_query)
-                vector_stores = [row["table_name"] for row in rows]
+                rows = await conn.fetch(LIST_VECTOR_STORES_QUERY)
+                vector_stores = [dict(row) for row in rows]
                 return vector_stores
         except Exception as e:
             logger.error(f"Error while listing vector stores: {str(e)}")
